@@ -34,8 +34,18 @@ impl MutationRoot {
         email: String,
         address: String,
     ) -> juniper::FieldResult<Customer> {
+
+        let id = uuid::Uuid::new_v4();
+        let email = email.to_lowercase();
+
+        ctx.client
+            .execute( "INSERT INTO customers (id, name, age, email, address) values ($1, $2, $3, $4, $5)",
+            &[&id, &name, &age, &email, &address],
+            )
+            .await?;    // nice!
+
         Ok(Customer {
-            id: "1".into(),
+            id: id.to_string(),
             name,
             age,
             email,
