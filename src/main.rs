@@ -10,11 +10,39 @@ use tokio_postgres::NoTls;
 struct QueryRoot;
 struct MutationRoot;
 
+// Make the struct work with Juniper
+#[derive(juniper::GraphQLObject)]
+struct Customer {
+    id: String,
+    name: String,
+    age: i32,
+    email: String,
+    address: String,
+}
+
 #[juniper::graphql_object(Context = Context)]
 impl QueryRoot {}
 
+// Define the mutations
 #[juniper::graphql_object(Context = Context)]
-impl MutationRoot {}
+impl MutationRoot {
+
+    async fn register_customer(
+        ctx: &Context,
+        name: String,
+        age: i32,
+        email: String,
+        address: String,
+    ) -> juniper::FieldResult<Customer> {
+        Ok(Customer {
+            id: "1".into(),
+            name,
+            age,
+            email,
+            address
+        })
+    }
+}
 
 type Schema = RootNode<'static, QueryRoot, MutationRoot>;
 
@@ -22,11 +50,13 @@ struct Context {
     client: Client,
 }
 
+
+
 #[tokio::main]
 async fn main() {
 
     // Connect to Postgres
-    let (client, connection) = tokio_postgres::connect("host=localhost user=postgres", NoTls)
+    let (client, connection) = tokio_postgres::connect("host=localhost user=postgres password=postgres", NoTls)
         .await
         .unwrap();
 
