@@ -21,7 +21,45 @@ struct Customer {
 }
 
 #[juniper::graphql_object(Context = Context)]
-impl QueryRoot {}
+impl QueryRoot {
+    async fn customer(ctx: &Context, id: String) -> juniper::FieldResult<Customer> {
+        let uuid = uuid::Uuid::parse_str(&id)?;
+        let row = ctx
+            .client
+            .query_one("SELECT name, age, email, address FROM customers WHERE id = $1", &[&uuid])
+            .await?;
+
+        let customer = Customer {
+            id,
+            name: row.try_get(0)?,
+            age: row.try_get(1)?,
+            email: row.try_get(2)?,
+            address: row.try_get(3)?,
+        };
+        Ok(customer)
+    }
+
+    async fn customers(ctx: &Context) -> juniper::FieldResult<Vec<Customer>> {
+        let rows = ctx
+            .client
+            .query("SELECT id, name, age, email, address FROM customers", &[])
+            .await?;
+
+        let mut customers = Vec::new();
+        for row in rows {
+            let id : uuid::Uuid = row.try_get(0)?;
+            let customer = Customer {
+                id: id.to_string(),
+                name: row.try_get(1)?,
+                age: row.try_get(2)?,
+                email: row.try_get(3)?,
+                address: row.try_get(4)?,
+            };
+            customers.push(customer);
+        }
+        Ok(customers)
+    }
+}
 
 // Define the mutations
 #[juniper::graphql_object(Context = Context)]
@@ -34,7 +72,6 @@ impl MutationRoot {
         email: String,
         address: String,
     ) -> juniper::FieldResult<Customer> {
-
         let id = uuid::Uuid::new_v4();
         let email = email.to_lowercase();
 
@@ -52,6 +89,72 @@ impl MutationRoot {
             address
         })
     }
+
+    async fn update_customer_email(
+        ctx: &Context,
+        id: String,
+        email: String,
+    ) -> juniper::FieldResult<Customer> {
+        let uuid = uuid::Uuid::parse_str(&id)?;
+        let email = email.to_lowercase();
+        let n = ctx
+            .client
+            .execute(
+                "UPDATE customers SET email = $1 WHERE ID = $2",
+                &[&email, &uuid],
+            )
+            .await?;
+
+        if n == 0 {
+            return Err("User does not exist".into());
+        }
+
+        let row = ctx
+            .client
+            .query_one("SELECT name, age, email, address FROM customers WHERE id = $1", &[&uuid])
+            .await?;
+
+        let customer = Customer {
+            id,
+            name: row.try_get(0)?,
+            age: row.try_get(1)?,
+            email: row.try_get(2)?,
+            address: row.try_get(3)?,
+        };
+        Ok(customer)
+    }
+
+    async fn delete_customer(ctx: &Context, id: String) -> juniper::FieldResult<bool> {
+        let uuid = uuid::Uuid::parse_str(&id)?;
+        let n = ctx
+            .client
+            .execute("DELETE FROM customers WHERE id = $1", &[&uuid])
+            .await?;
+
+        if n == 0 {
+            return Err("User does not exist".into());
+        }
+
+        Ok(true)
+    }
+
+    async fn destroy_customers(ctx: &Context) -> juniper::FieldResult<i32> {
+        let mut ret = 0;
+        let rows = ctx
+            .client
+            .query("SELECT id, name, age, email, address FROM customers", &[])
+            .await?;
+
+        for row in rows {
+            ret += 1;
+            let uuid : uuid::Uuid = row.try_get(0)?;
+            ctx
+                .client
+                .execute("DELETE FROM customers WHERE id = $1", &[&uuid])
+                .await?;
+        }
+        Ok(ret)
+    }
 }
 
 type Schema = RootNode<'static, QueryRoot, MutationRoot>;
@@ -59,8 +162,6 @@ type Schema = RootNode<'static, QueryRoot, MutationRoot>;
 struct Context {
     client: Client,
 }
-
-
 
 #[tokio::main]
 async fn main() {
